@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>철근 콘크리트 구조 vs 전통 건축물 구조 3D 비교 시뮬레이터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas {
+            touch-action: none;
+            cursor: grab;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+        .member-chip {
+            transition: all 0.15s ease;
+        }
+        .member-chip:hover {
+            transform: translateY(-2px);
+        }
+        .member-chip.active {
+            ring-width: 3px;
+            transform: scale(1.03);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen p-2 md:p-4">
+
+    <div class="max-w-7xl mx-auto bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+        
+        <!-- ================= 상단 헤더 및 화면 모드 전환 ================= -->
+        <header class="bg-slate-900 text-white px-5 py-3.5 flex flex-wrap justify-between items-center gap-3 border-b-4 border-amber-500">
+            <div>
+                <span class="bg-amber-500 text-slate-950 font-black text-xs px-2.5 py-0.5 rounded-full">건축 구조 비교 실험실</span>
+                <h1 class="text-lg md:text-2xl font-black mt-0.5">🏛️ 철근 콘크리트 구조(일체식) vs 전통 건축물 구조(가구식)</h1>
+            </div>
+
+            <!-- 보기 모드 전환 버튼 -->
+            <div class="flex flex-wrap gap-1.5">
+                <button onclick="setViewMode('both')" id="mode-both" class="mode-btn px-3.5 py-2 rounded-xl font-black text-xs md:text-sm bg-amber-500 text-slate-950 shadow transition">
+                    ⚖️ 두 구조 나란히 비교
+                </button>
+                <button onclick="setViewMode('rc')" id="mode-rc" class="mode-btn px-3.5 py-2 rounded-xl font-bold text-xs md:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 transition">
+                    🏢 철근 콘크리트 크게 보기
+                </button>
+                <button onclick="setViewMode('hanok')" id="mode-hanok" class="mode-btn px-3.5 py-2 rounded-xl font-bold text-xs md:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 transition">
+                    🏯 전통 건축물 크게 보기
+                </button>
+            </div>
+        </header>
+
+        <!-- ================= 상단 컨트롤 툴바 (시점 · 내부 투시 · 분해 · 하중 화살표) ================= -->
+        <div class="bg-slate-50 px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            
+            <!-- 1. 카메라 시점 프리셋 -->
+            <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-xs font-black text-slate-500 mr-1">🎥 관찰 방향:</span>
+                <button onclick="setCameraAngle(-0.65, 0.35)" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-xs font-bold shadow-sm">🧊 기본 입체</button>
+                <button onclick="setCameraAngle(0, 0.15)" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-xs font-bold shadow-sm">👀 정면</button>
+                <button onclick="setCameraAngle(-1.57, 0.15)" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-xs font-bold shadow-sm">📐 측면</button>
+                <button onclick="setCameraAngle(-0.5, -0.55)" class="px-2.5 py-1.5 rounded-lg bg-indigo-50 border border-indigo-300 hover:bg-indigo-100 text-indigo-900 text-xs font-black shadow-sm">
+                    🔭 밑에서 올려다보기 (보·서까래 확인)
+                </button>
+            </div>
+
+            <!-- 2. 내부 투시 / 하중 화살표 / 이름표 토글 -->
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="toggleXray()" id="btn-xray" class="px-3 py-1.5 rounded-xl border-2 border-sky-500 bg-white text-sky-800 hover:bg-sky-50 font-black text-xs transition">
+                    🔍 내부 투시 (철근·서까래 보기): OFF
+                </button>
+                <button onclick="toggleLoadArrows()" id="btn-arrows" class="px-3 py-1.5 rounded-xl border-2 border-red-500 bg-red-500 text-white font-black text-xs shadow-sm transition">
+                    ⬇️ 하중 전달 화살표: ON
+                </button>
+                <button onclick="toggleLabels()" id="btn-labels" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-slate-800 text-white font-bold text-xs transition">
+                    🏷️ 부재 이름표: ON
+                </button>
+            </div>
+
+            <!-- 3. 부재 상하 분해 슬라이더 -->
+            <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-sm w-full sm:w-auto">
+                <span class="text-xs font-black text-slate-700 shrink-0">🧩 부재 분해하기:</span>
+                <input id="explode-slider" type="range" min="0" max="100" value="0" class="w-28 accent-amber-500 cursor-pointer">
+                <span id="explode-label" class="text-xs font-bold text-amber-700 w-9 text-right">0%</span>
+            </div>
+        </div>
+
+        <!-- ================= 메인 3D 캔버스 & 하중 전달 단계별 비교 영역 ================= -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+            
+            <!-- 왼쪽/중앙(8칸): 3D 인터랙티브 뷰포트 -->
+            <div class="lg:col-span-8 relative bg-gradient-to-b from-sky-100 via-slate-50 to-slate-200 flex flex-col justify-between" style="min-height: 520px;">
+                
+                <!-- 조작 안내 오버레이 -->
+                <div class="absolute top-3 left-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm text-xs font-bold text-slate-600 z-10 pointer-events-none">
+                    ✋ 마우스나 손가락으로 화면을 <b>드래그하여 360° 회전</b>해 보세요! (오른쪽에서 부재를 클릭하면 강조됩니다)
+                </div>
+
+                <!-- 3D 렌더링 캔버스 -->
+                <canvas id="sim-canvas" class="w-full h-[520px] block"></canvas>
+
+                <!-- 하단 구조 핵심 비교 배너 -->
+                <div class="bg-slate-900/95 text-white px-4 py-2.5 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded bg-blue-500 text-white font-black shrink-0">철근 콘크리트 (일체식)</span>
+                        <span class="text-slate-200">철근 뼈대에 콘크리트를 부어 <b>기초부터 바닥·보·기둥·벽이 한 덩어리</b>로 연결됨</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black shrink-0">전통 건축물 (가구식)</span>
+                        <span class="text-slate-200">기둥과 보, 도리, 서까래 등 <b>가늘고 긴 목재를 홈에 끼워 조립</b>하여 지붕을 받침</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 오른쪽(4칸): 하중 전달 순서 & 부재별 클릭 탐색 패널 -->
+            <div class="lg:col-span-4 p-4 bg-white flex flex-col justify-between space-y-4">
+                
+                <!-- 선택된 부재 상세 설명 박스 -->
+                <div id="member-detail-box" class="p-4 rounded-2xl bg-slate-900 text-white shadow-md">
+                    <div class="flex items-center justify-between">
+                        <span id="detail-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-400 text-slate-950">전체 하중 전달 원리</span>
+                        <button onclick="selectMember(null)" class="text-[11px] text-slate-300 hover:text-white underline">전체 보기 해제</button>
+                    </div>
+                    <h3 id="detail-title" class="text-base font-black mt-2 text-amber-300">👇 아래 부재 버튼을 클릭해 보세요!</h3>
+                    <p id="detail-desc" class="text-xs text-slate-200 mt-1.5 leading-relaxed">
+                        건물 위에서 누르는 힘(상부 하중)은 <b>위쪽 부재에서 아래쪽 부재로 차례대로 모여서</b> 최종적으로 땅(지반)으로 전달됩니다. 각 부재를 클릭하면 3D 화면에서 해당 부재가 빛나며 역할을 설명해 줍니다.
+                    </p>
+                </div>
+
+                <!-- 두 구조의 위->아래 하중 전달 흐름도 (클릭 가능) -->
+                <div class="grid grid-cols-2 gap-3 flex-1">
+                    
+                    <!-- 1. 철근 콘크리트 구조 하중 전달 순서 -->
+                    <div class="bg-blue-50/60 p-3 rounded-2xl border border-blue-200 flex flex-col justify-between">
+                        <div>
+                            <div class="text-center pb-2 border-b border-blue-200">
+                                <span class="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full">일체식 구조</span>
+                                <h4 class="font-black text-sm text-slate-900 mt-1">🏢 철근 콘크리트</h4>
+                            </div>
+
+                            <div class="mt-2.5 space-y-1.5 flex flex-col items-center">
+                                <div class="text-[11px] font-black text-red-600">⬇️ 상부 하중 (사람·가구)</div>
+
+                                <button onclick="selectMember('rc_slab')" id="chip-rc_slab" class="member-chip w-full py-2 px-2.5 rounded-xl bg-white border-2 border-blue-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">① 2층 바닥 (슬래브)</div>
+                                    <div class="text-[10px] text-slate-500">위에서 누르는 힘을 처음 받음</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('rc_beam')" id="chip-rc_beam" class="member-chip w-full py-2 px-2.5 rounded-xl bg-white border-2 border-blue-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">② 보 (Beam)</div>
+                                    <div class="text-[10px] text-slate-500">바닥 밑을 받쳐 기둥으로 전달</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('rc_col_wall')" id="chip-rc_col_wall" class="member-chip w-full py-2 px-2.5 rounded-xl bg-white border-2 border-blue-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">③ 기둥 · 벽 (내력벽)</div>
+                                    <div class="text-[10px] text-slate-500">수직으로 버티며 기초로 전달</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('rc_found')" id="chip-rc_found" class="member-chip w-full py-2 px-2.5 rounded-xl bg-white border-2 border-blue-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">④ 기초 (Foundation)</div>
+                                    <div class="text-[10px] text-slate-500">땅(지반)으로 힘을 넓게 분산</div>
+                                </button>
+
+                                <!-- 추가 핵심 부재: 철근 -->
+                                <button onclick="selectMember('rc_rebar')" id="chip-rc_rebar" class="member-chip w-full mt-2 py-2 px-2.5 rounded-xl bg-sky-900 text-white border-2 border-sky-400 text-left shadow-sm">
+                                    <div class="font-black text-xs text-amber-300">➕ 핵심 추가: 철근</div>
+                                    <div class="text-[10px] text-sky-100">콘크리트 속에서 당기는 힘 보강</div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. 전통 건축물 구조 하중 전달 순서 -->
+                    <div class="bg-amber-50/70 p-3 rounded-2xl border border-amber-200 flex flex-col justify-between">
+                        <div>
+                            <div class="text-center pb-2 border-b border-amber-200">
+                                <span class="text-[11px] font-black text-amber-900 bg-amber-200 px-2 py-0.5 rounded-full">가구식 구조</span>
+                                <h4 class="font-black text-sm text-slate-900 mt-1">🏯 전통 건축물</h4>
+                            </div>
+
+                            <div class="mt-2.5 space-y-1.5 flex flex-col items-center">
+                                <div class="text-[11px] font-black text-red-600">⬇️ 상부 하중 (지붕·눈·비)</div>
+
+                                <button onclick="selectMember('hk_tile')" id="chip-hk_tile" class="member-chip w-full py-1.5 px-2.5 rounded-xl bg-white border-2 border-amber-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">① 기와</div>
+                                    <div class="text-[10px] text-slate-500">비바람을 막는 무거운 지붕</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('hk_rafter')" id="chip-hk_rafter" class="member-chip w-full py-1.5 px-2.5 rounded-xl bg-white border-2 border-amber-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">② 서까래</div>
+                                    <div class="text-[10px] text-slate-500">기와 밑을 비스듬히 받치는 나무</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('hk_purlin')" id="chip-hk_purlin" class="member-chip w-full py-1.5 px-2.5 rounded-xl bg-amber-100/80 border-2 border-amber-500 text-left shadow-sm">
+                                    <div class="font-black text-xs text-amber-950">➕ ③ 도리 · 공포(짜임)</div>
+                                    <div class="text-[10px] text-amber-800">서까래를 받쳐 보·기둥에 전달</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('hk_beam')" id="chip-hk_beam" class="member-chip w-full py-1.5 px-2.5 rounded-xl bg-white border-2 border-amber-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">④ 보 (대들보)</div>
+                                    <div class="text-[10px] text-slate-500">기둥 사이를 가로질러 지붕 받침</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('hk_col')" id="chip-hk_col" class="member-chip w-full py-1.5 px-2.5 rounded-xl bg-white border-2 border-amber-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">⑤ 기둥</div>
+                                    <div class="text-[10px] text-slate-500">보의 무게를 받아 수직으로 지지</div>
+                                </button>
+                                <div class="text-red-500 font-black text-xs leading-none">↓</div>
+
+                                <button onclick="selectMember('hk_found')" id="chip-hk_found" class="member-chip w-full py-1.5 px-2.5 rounded-xl bg-white border-2 border-amber-300 text-left shadow-sm">
+                                    <div class="font-black text-xs text-slate-900">⑥ 기초 (주춧돌)</div>
+                                    <div class="text-[10px] text-slate-500">기둥 밑에서 땅으로 무게 전달</div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================================================
+           1. 부재별 상세 설명 데이터 (중학생 눈높이 맞춤 설명)
+           ========================================================================= */
+        const memberDescriptions = {
+            rc_slab: {
+                badge: '철근 콘크리트 구조 ①',
+                title: '2층 바닥 (슬래브, Slab)',
+                desc: '사람, 가구 등 <b>위에서 누르는 상부 하중을 가장 먼저 넓게 받아내는 평평한 콘크리트 바닥판</b>입니다. 받은 힘을 바로 아래에 있는 <b>보(Beam)</b>와 <b>벽</b>으로 전달합니다.'
+            },
+            rc_beam: {
+                badge: '철근 콘크리트 구조 ②',
+                title: '보 (Beam)',
+                desc: '2층 바닥(슬래브) 바로 아래에 수평으로 설치된 굵은 뼈대입니다. <b>2층 바닥이 휘거나 무너지지 않게 받쳐주며, 바닥에서 내려온 무게를 양옆의 기둥으로 전달</b>합니다.'
+            },
+            rc_col_wall: {
+                badge: '철근 콘크리트 구조 ③',
+                title: '기둥 (Column) 및 벽 (내력벽, Wall)',
+                desc: '<b>보와 2층 바닥에서 넘어온 큰 무게를 수직으로 꼿꼿이 버텨내며</b> 맨 아래의 <b>기초</b>로 내려보내는 역할을 합니다. 힘을 받는 튼튼한 벽을 내력벽이라고 부릅니다.'
+            },
+            rc_found: {
+                badge: '철근 콘크리트 구조 ④',
+                title: '기초 (Foundation)',
+                desc: '건물 맨 아래 바닥에 넓고 두껍게 만든 콘크리트 판입니다. <b>기둥과 벽을 타고 내려온 건물 전체의 무게를 땅(지반)으로 안전하고 고르게 분산</b>시킵니다.'
+            },
+            rc_rebar: {
+                badge: '철근 콘크리트 추가 핵심 부재',
+                title: '철근 (Rebar · 강철 뼈대)',
+                desc: '콘크리트는 누르는 힘(압축력)에는 강하지만 당겨서 휘는 힘(인장력)에는 약합니다. 그래서 <b>콘크리트 속에 그물처럼 철근을 넣어 서로의 단점을 완벽히 보완</b>하고 건물 전체를 한 덩어리(일체식)로 묶어줍니다!'
+            },
+            hk_tile: {
+                badge: '전통 건축물 구조 ①',
+                title: '기와 (Roof Tile)',
+                desc: '지붕 가장 위에 촘촘히 얹어 비와 바람을 막아주는 부재입니다. <b>흙을 구워 만들어 무게가 꽤 무거우며, 이 무게(상부 하중)는 바로 아래의 서까래로 전달</b>됩니다.'
+            },
+            hk_rafter: {
+                badge: '전통 건축물 구조 ②',
+                title: '서까래 (Rafter)',
+                desc: '기와 바로 밑에 지붕 경사를 따라 나란히 깔려 있는 둥근 나무들입니다. <b>무거운 기와의 하중을 받아 그 아래에 가로로 놓인 도리로 전달</b>합니다.'
+            },
+            hk_purlin: {
+                badge: '전통 건축물 추가 핵심 부재 ③',
+                title: '도리 (Purlin) 와 공포 (짜임 받침)',
+                desc: '<b>도리</b>는 서까래 밑을 가로로 받쳐주는 나무이고, <b>공포</b>는 기둥 위에서 나무에 홈을 파서 서로 끼워 맞춘 받침입니다. <b>지붕(기와·서까래)의 큰 무게를 모아 보와 기둥에 효과적으로 전달</b>합니다!'
+            },
+            hk_beam: {
+                badge: '전통 건축물 구조 ④',
+                title: '보 (대들보, Beam)',
+                desc: '앞뒤 기둥 사이를 굵고 튼튼하게 가로질러 놓은 큰 나무입니다. <b>서까래와 도리에서 내려온 무거운 지붕의 하중을 허리에서 떠받쳐 양쪽 기둥으로 나누어 전달</b>합니다.'
+            },
+            hk_col: {
+                badge: '전통 건축물 구조 ⑤',
+                title: '기둥 (Wooden Column)',
+                desc: '보(대들보)와 도리·공포를 통해 내려온 <b>지붕 전체의 무게를 수직으로 지탱하여 맨 아래 기초(주춧돌)로 전달</b>하는 기둥입니다.'
+            },
+            hk_found: {
+                badge: '전통 건축물 구조 ⑥',
+                title: '기초 (주춧돌, Foundation Stone)',
+                desc: '나무 기둥 바로 밑을 받치고 있는 단단한 돌입니다. <b>기둥에서 내려온 무게를 땅(지반)으로 안전하게 전달</b>하고, 땅의 습기 때문에 나무 기둥이 썩는 것을 막아줍니다.'
+            }
+        };
+
+        /* =========================================================================
+           2. 3D 시뮬레이터 상태 변수 및 카메라 인터랙션
+           ========================================================================= */
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let viewMode = 'both'; // 'both' | 'rc' | 'hanok'
+        let camYaw = -0.65;    // 좌우 회전 각도 (라디안)
+        let camPitch = 0.32;   // 상하 기울기 각도 (라디안, 음수면 밑에서 올려다봄!)
+        let explodeRatio = 0;  // 0.0 ~ 1.0 (부재 상하 분해 정도)
+        let isXray = false;    // 내부 투시 모드 (콘크리트 속 철근, 기와 속 서까래 보기)
+        let showArrows = true; // 하중 전달 화살표 표시
+        let showLabels = true; // 부재 이름표 표시
+        let selectedMember = null;
+        let animTime = 0;
+
+        // 마우스 / 터치 드래그 회전 이벤트
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+
+        canvas.addEventListener('pointerdown', (e) => {
+            isDragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            canvas.setPointerCapture(e.pointerId);
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - lastX;
+            const dy = e.clientY - lastY;
+            lastX = e.clientX;
+            lastY = e.clientY;
+
+            camYaw += dx * 0.011;
+            camPitch = Math.max(-0.75, Math.min(1.15, camPitch + dy * 0.011));
+        });
+
+        canvas.addEventListener('pointerup', () => { isDragging = false; });
+        canvas.addEventListener('pointercancel', () => { isDragging = false; });
+
+        // UI 컨트롤 함수들
+        function setViewMode(mode) {
+            viewMode = mode;
+            ['both', 'rc', 'hanok'].forEach(m => {
+                const btn = document.getElementById(`mode-${m}`);
+                btn.className = (m === mode)
+                    ? 'mode-btn px-3.5 py-2 rounded-xl font-black text-xs md:text-sm bg-amber-500 text-slate-950 shadow transition'
+                    : 'mode-btn px-3.5 py-2 rounded-xl font-bold text-xs md:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 transition';
+            });
+        }
+
+        function setCameraAngle(yaw, pitch) {
+            camYaw = yaw;
+            camPitch = pitch;
+        }
+
+        function toggleXray() {
+            isXray = !isXray;
+            const btn = document.getElementById('btn-xray');
+            if (isXray) {
+                btn.textContent = '🔍 내부 투시 (철근·서까래 보기): ON';
+                btn.className = 'px-3 py-1.5 rounded-xl border-2 border-sky-600 bg-sky-600 text-white font-black text-xs shadow-sm transition';
+            } else {
+                btn.textContent = '🔍 내부 투시 (철근·서까래 보기): OFF';
+                btn.className = 'px-3 py-1.5 rounded-xl border-2 border-sky-500 bg-white text-sky-800 hover:bg-sky-50 font-black text-xs transition';
+            }
+        }
+
+        function toggleLoadArrows() {
+            showArrows = !showArrows;
+            const btn = document.getElementById('btn-arrows');
+            if (showArrows) {
+                btn.textContent = '⬇️ 하중 전달 화살표: ON';
+                btn.className = 'px-3 py-1.5 rounded-xl border-2 border-red-500 bg-red-500 text-white font-black text-xs shadow-sm transition';
+            } else {
+                btn.textContent = '⬇️ 하중 전달 화살표: OFF';
+                btn.className = 'px-3 py-1.5 rounded-xl border-2 border-slate-300 bg-white text-slate-600 font-bold text-xs transition';
+            }
+        }
+
+        function toggleLabels() {
+            showLabels = !showLabels;
+            const btn = document.getElementById('btn-labels');
+            btn.textContent = showLabels ? '🏷️ 부재 이름표: ON' : '🏷️ 부재 이름표: OFF';
+            btn.className = showLabels
+                ? 'px-3 py-1.5 rounded-xl border border-slate-300 bg-slate-800 text-white font-bold text-xs transition'
+                : 'px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-slate-600 font-bold text-xs transition';
+        }
+
+        document.getElementById('explode-slider').addEventListener('input', (e) => {
+            explodeRatio = parseInt(e.target.value) / 100;
+            document.getElementById('explode-label').textContent = `${e.target.value}%`;
+        });
+
+        function selectMember(memKey) {
+            selectedMember = (selectedMember === memKey) ? null : memKey;
+
+            document.querySelectorAll('.member-chip').forEach(el => {
+                el.classList.remove('ring-4', 'ring-indigo-500', 'bg-indigo-50');
+            });
+
+            if (selectedMember) {
+                const chip = document.getElementById(`chip-${selectedMember}`);
+                if (chip) chip.classList.add('ring-4', 'ring-indigo-500');
+
+                const info = memberDescriptions[selectedMember];
+                document.getElementById('detail-badge').textContent = info.badge;
+                document.getElementById('detail-title').textContent = info.title;
+                document.getElementById('detail-desc').innerHTML = info.desc;
+
+                // 철근이나 서까래를 선택하면 잘 보이도록 내부 투시 자동 활성화 보조
+                if (selectedMember === 'rc_rebar' || selectedMember === 'hk_rafter') {
+                    if (!isXray) toggleXray();
+                }
+            } else {
+                document.getElementById('detail-badge').textContent = '전체 하중 전달 원리';
+                document.getElementById('detail-title').textContent = '👇 아래 부재 버튼을 클릭해 보세요!';
+                document.getElementById('detail-desc').innerHTML = '건물 위에서 누르는 힘(상부 하중)은 <b>위쪽 부재에서 아래쪽 부재로 차례대로 모여서</b> 최종적으로 땅(지반)으로 전달됩니다.';
+            }
+        }
+
+        /* =========================================================================
+           3. 3D 투영 엔진 (박스, 다각형, 3D 선분, 하중 화살표, 이름표 렌더링)
+           ========================================================================= */
+        function project3D(x, y, z, centerX, centerY, scale) {
+            // Y축(수직) 기준 회전(camYaw)
+            const cosY = Math.cos(camYaw);
+            const sinY = Math.sin(camYaw);
+            const x1 = x * cosY - z * sinY;
+            const z1 = x * sinY + z * cosY;
+
+            // X축 기준 기울기(camPitch)
+            const cosP = Math.cos(camPitch);
+            const sinP = Math.sin(camPitch);
+            const y2 = y * cosP - z1 * sinP;
+            const z2 = y * sinP + z1 * cosP;
+
+            // 약간의 원근감 부여
+            const fov = 900;
+            const persp = fov / (fov + z2 * scale * 0.25);
+
+            return {
+                sx: centerX + x1 * scale * persp,
+                sy: centerY - y2 * scale * persp,
+                depth: z2
+            };
+        }
+
+        // 3D 직육면체(Box)를 6개의 면(Polygon)으로 분해하여 렌더 큐에 추가
+        function addBoxToQueue(queue, x1, y1, z1, x2, y2, z2, colors, alpha, tag) {
+            const isSelected = (selectedMember === tag);
+            const isDimmed = (selectedMember && selectedMember !== tag && tag !== 'ground');
+
+            let finalAlpha = alpha;
+            if (isDimmed) finalAlpha *= 0.28;
+            if (isSelected) finalAlpha = Math.max(alpha, 0.92);
+
+            const v = [
+                [x1, y1, z1], [x2, y1, z1], [x2, y2, z1], [x1, y2, z1],
+                [x1, y1, z2], [x2, y1, z2], [x2, y2, z2], [x1, y2, z2]
+            ];
+
+            const faces = [
+                { idx: [3, 2, 6, 7], col: colors.top },    // 윗면
+                { idx: [0, 1, 5, 4], col: colors.bottom }, // 아랫면
+                { idx: [4, 5, 6, 7], col: colors.front },  // 앞면
+                { idx: [0, 1, 2, 3], col: colors.back },   // 뒷면
+                { idx: [0, 4, 7, 3], col: colors.side },   // 좌측면
+                { idx: [1, 5, 6, 2], col: colors.side }    // 우측면
+            ];
+
+            const strokeCol = isSelected ? '#facc15' : (colors.stroke || 'rgba(15,23,42,0.45)');
+            const strokeW = isSelected ? 2.5 : 1.0;
+
+            faces.forEach(f => {
+                const pts3D = f.idx.map(i => v[i]);
+                queue.push({
+                    type: 'poly',
+                    pts3D,
+                    fill: isSelected ? colors.highlight || f.col : f.col,
+                    stroke: strokeCol,
+                    strokeW,
+                    alpha: finalAlpha
+                });
+            });
+        }
+
+        // 3D 선분(철근, 서까래 등) 추가
+        function addLineToQueue(queue, p1, p2, color, width, alpha, tag, dashed = false) {
+            const isSelected = (selectedMember === tag);
+            const isDimmed = (selectedMember && selectedMember !== tag);
+            queue.push({
+                type: 'line',
+                p1, p2,
+                color: isSelected ? '#facc15' : color,
+                width: isSelected ? width + 2 : width,
+                alpha: isDimmed ? alpha * 0.25 : alpha,
+                dashed
+            });
+        }
+
+        /* =========================================================================
+           4. 철근 콘크리트 구조 & 전통 건축물 3D 모델 생성기
+           ========================================================================= */
+        function buildRCModel(queue, labels, arrows, exp) {
+            // 분해 변위 (위쪽으로 갈수록 더 많이 띄움)
+            const dyFound = 0;
+            const dyCol = exp * 35;
+            const dyBeam = exp * 85;
+            const dySlab = exp * 135;
+
+            const concAlpha = isXray ? 0.26 : 0.94;
+
+            const colPalette = {
+                found: { top: '#94a3b8', bottom: '#475569', front: '#64748b', back: '#64748b', side: '#475569', highlight: '#fde047' },
+                wall:  { top: '#e2e8f0', bottom: '#94a3b8', front: '#cbd5e1', back: '#cbd5e1', side: '#94a3b8', highlight: '#fde047' },
+                col:   { top: '#cbd5e1', bottom: '#64748b', front: '#94a3b8', back: '#94a3b8', side: '#64748b', highlight: '#fde047' },
+                beam:  { top: '#bae6fd', bottom: '#0284c7', front: '#38bdf8', back: '#38bdf8', side: '#0284c7', highlight: '#fde047' },
+                slab:  { top: '#f1f5f9', bottom: '#94a3b8', front: '#cbd5e1', back: '#cbd5e1', side: '#94a3b8', highlight: '#fde047' }
+            };
+
+            // 1. 기초 (Foundation): y = -90 ~ -70
+            addBoxToQueue(queue, -105, -90 + dyFound, -95, 105, -70 + dyFound, 95, colPalette.found, concAlpha, 'rc_found');
+
+            // 2. 기둥 3개 & 내력벽 1개 (y = -70 ~ +35)
+            const colCoords = [
+                [-85, -75], // 좌후
+                [85, -75],  // 우후
+                [-85, 75],  // 좌전
+                [85, 75]    // 우전
+            ];
+            colCoords.forEach(([cx, cz]) => {
+                addBoxToQueue(queue, cx - 13, -70 + dyCol, cz - 13, cx + 13, 35 + dyCol, cz + 13, colPalette.col, concAlpha, 'rc_col_wall');
+            });
+
+            // 뒤쪽 내력벽 (벽체): 내부가 잘 보이도록 뒤쪽 한 면에 배치
+            addBoxToQueue(queue, -72, -70 + dyCol, -82, 72, 35 + dyCol, -68, colPalette.wall, concAlpha, 'rc_col_wall');
+
+            // 3. 보 (Beam - 2층 바닥 아래 테두리 및 중앙 가로보): y = 35 ~ 55
+            // 앞·뒤 보
+            addBoxToQueue(queue, -98, 35 + dyBeam, 64, 98, 55 + dyBeam, 86, colPalette.beam, concAlpha, 'rc_beam');
+            addBoxToQueue(queue, -98, 35 + dyBeam, -86, 98, 55 + dyBeam, -64, colPalette.beam, concAlpha, 'rc_beam');
+            // 좌·우 보
+            addBoxToQueue(queue, -98, 35 + dyBeam, -64, -72, 55 + dyBeam, 64, colPalette.beam, concAlpha, 'rc_beam');
+            addBoxToQueue(queue, 72, 35 + dyBeam, -64, 98, 55 + dyBeam, 64, colPalette.beam, concAlpha, 'rc_beam');
+
+            // 4. 2층 바닥 (슬래브, Slab): y = 55 ~ 72
+            addBoxToQueue(queue, -102, 55 + dySlab, -90, 102, 72 + dySlab, 90, colPalette.slab, concAlpha, 'rc_slab');
+
+            // 5. [추가 부재] 철근 (Rebar 격자) - X-ray 모드이거나 철근 선택 시 선명하게 표시
+            const rebarAlpha = (isXray || selectedMember === 'rc_rebar') ? 0.95 : 0.35;
+            const rebarCol = '#dc2626';
+            // 2층 바닥 슬래브 내부 철근 그물망
+            for (let rx = -85; rx <= 85; rx += 34) {
+                addLineToQueue(queue, [rx, 63 + dySlab, -80], [rx, 63 + dySlab, 80], rebarCol, 2, rebarAlpha, 'rc_rebar');
+            }
+            for (let rz = -75; rz <= 75; rz += 30) {
+                addLineToQueue(queue, [-90, 63 + dySlab, rz], [90, 63 + dySlab, rz], rebarCol, 2, rebarAlpha, 'rc_rebar');
+            }
+            // 보 내부 철근
+            addLineToQueue(queue, [-90, 44 + dyBeam, 75], [90, 44 + dyBeam, 75], '#ea580c', 2.5, rebarAlpha, 'rc_rebar');
+            addLineToQueue(queue, [-90, 44 + dyBeam, -75], [90, 44 + dyBeam, -75], '#ea580c', 2.5, rebarAlpha, 'rc_rebar');
+            // 기둥 내부 수직 철근 (기초부터 보까지 일체식으로 연결!)
+            colCoords.forEach(([cx, cz]) => {
+                addLineToQueue(queue, [cx - 5, -82 + dyFound, cz - 5], [cx - 5, 50 + dyBeam, cz - 5], '#dc2626', 2.2, rebarAlpha, 'rc_rebar');
+                addLineToQueue(queue, [cx + 5, -82 + dyFound, cz + 5], [cx + 5, 50 + dyBeam, cz + 5], '#dc2626', 2.2, rebarAlpha, 'rc_rebar');
+            });
+
+            // 6. 부재 이름표 등록
+            if (showLabels) {
+                labels.push({ pos: [0, 76 + dySlab, 0], text: '2층 바닥(슬래브)', bg: '#1e293b' });
+                labels.push({ pos: [0, 45 + dyBeam, 86], text: '보 (Beam)', bg: '#0284c7' });
+                labels.push({ pos: [-92, -15 + dyCol, 82], text: '기둥', bg: '#475569' });
+                labels.push({ pos: [0, -10 + dyCol, -82], text: '벽 (내력벽)', bg: '#475569' });
+                labels.push({ pos: [0, -82 + dyFound, 96], text: '기초', bg: '#334155' });
+                if (isXray || selectedMember === 'rc_rebar') {
+                    labels.push({ pos: [55, 64 + dySlab, 35], text: '철근 (일체식 보강)', bg: '#dc2626' });
+                }
+            }
+
+            // 7. 상부 하중 전달 화살표 경로 등록 (위 -> 아래)
+            if (showArrows) {
+                // 상부 하중 -> 2층 바닥 중앙
+                arrows.push({ from: [0, 125 + dySlab, 0], to: [0, 72 + dySlab, 0], color: '#ef4444' });
+                // 2층 바닥 중앙 -> 앞/뒤 보로 분산
+                arrows.push({ from: [0, 64 + dySlab, 0], to: [0, 48 + dyBeam, 75], color: '#f97316' });
+                arrows.push({ from: [0, 64 + dySlab, 0], to: [0, 48 + dyBeam, -75], color: '#f97316' });
+                // 앞/뒤 보 -> 양쪽 기둥으로 전달
+                arrows.push({ from: [0, 45 + dyBeam, 75], to: [-85, 38 + dyCol, 75], color: '#f59e0b' });
+                arrows.push({ from: [0, 45 + dyBeam, 75], to: [85, 38 + dyCol, 75], color: '#f59e0b' });
+                // 기둥 & 벽 -> 기초로 수직 하강
+                colCoords.forEach(([cx, cz]) => {
+                    arrows.push({ from: [cx, 35 + dyCol, cz], to: [cx, -75 + dyFound, cz], color: '#ef4444' });
+                    // 기초 -> 지반 전달
+                    arrows.push({ from: [cx, -78 + dyFound, cz], to: [cx, -115, cz], color: '#dc2626' });
+                });
+            }
+        }
+
+        function buildHanokModel(queue, labels, arrows, exp) {
+            // 분해 변위 (주춧돌 -> 기둥 -> 보·도리·공포 -> 서까래 -> 기와)
+            const dyStone = 0;
+            const dyCol = exp * 30;
+            const dyBeam = exp * 75;
+            const dyRafter = exp * 120;
+            const dyTile = exp * 165;
+
+            const roofAlpha = isXray ? 0.22 : 0.95;
+            const woodAlpha = 0.95;
+
+            const woodPal = {
+                stone:  { top: '#d6d3d1', bottom: '#78716c', front: '#a8a29e', back: '#a8a29e', side: '#78716c', highlight: '#fde047' },
+                col:    { top: '#d97706', bottom: '#78350f', front: '#b45309', back: '#b45309', side: '#92400e', highlight: '#fde047' },
+                gonpo:  { top: '#f59e0b', bottom: '#92400e', front: '#d97706', back: '#d97706', side: '#b45309', highlight: '#fde047' },
+                beam:   { top: '#fcd34d', bottom: '#92400e', front: '#f59e0b', back: '#f59e0b', side: '#d97706', highlight: '#fde047' },
+                purlin: { top: '#fde68a', bottom: '#b45309', front: '#fbbf24', back: '#fbbf24', side: '#d97706', highlight: '#fde047' },
+                tile:   { top: '#334155', bottom: '#0f172a', front: '#1e293b', back: '#1e293b', side: '#0f172a', highlight: '#fde047' }
+            };
+
+            const colCoords = [
+                [-80, -68], [80, -68],
+                [-80, 68],  [80, 68]
+            ];
+
+            // 1. 기초 (주춧돌 4개): y = -90 ~ -72 + 기단 바닥
+            addBoxToQueue(queue, -105, -96, -92, 105, -90, 92, woodPal.stone, 0.5, 'ground');
+            colCoords.forEach(([cx, cz]) => {
+                addBoxToQueue(queue, cx - 18, -90 + dyStone, cz - 18, cx + 18, -72 + dyStone, cz + 18, woodPal.stone, woodAlpha, 'hk_found');
+            });
+
+            // 2. 나무 기둥 4개 (y = -72 ~ +18)
+            colCoords.forEach(([cx, cz]) => {
+                addBoxToQueue(queue, cx - 10, -72 + dyCol, cz - 10, cx + 10, 18 + dyCol, cz + 10, woodPal.col, woodAlpha, 'hk_col');
+            });
+
+            // 3. [추가 부재] 공포 (기둥 위 짜임 받침): y = 18 ~ 30
+            colCoords.forEach(([cx, cz]) => {
+                addBoxToQueue(queue, cx - 16, 18 + dyBeam, cz - 16, cx + 16, 30 + dyBeam, cz + 16, woodPal.gonpo, woodAlpha, 'hk_purlin');
+            });
+
+            // 4. 보 (대들보 - 앞뒤 기둥을 가로지르는 굵은 수평 부재): y = 30 ~ 46
+            addBoxToQueue(queue, -92, 30 + dyBeam, -78, -68, 46 + dyBeam, 78, woodPal.beam, woodAlpha, 'hk_beam');
+            addBoxToQueue(queue, 68, 30 + dyBeam, -78, 92, 46 + dyBeam, 78, woodPal.beam, woodAlpha, 'hk_beam');
+            // 중앙 대들보 (이해하기 쉽게 중앙에도 굵은 대들보 배치)
+            addBoxToQueue(queue, -12, 30 + dyBeam, -74, 12, 46 + dyBeam, 74, woodPal.beam, woodAlpha, 'hk_beam');
+
+            // 대들보 위에서 마루도리(종도리)를 받치는 동자기둥
+            addBoxToQueue(queue, -86, 46 + dyBeam, -8, -74, 78 + dyBeam, 8, woodPal.gonpo, woodAlpha, 'hk_purlin');
+            addBoxToQueue(queue, 74, 46 + dyBeam, -8, 86, 78 + dyBeam, 8, woodPal.gonpo, woodAlpha, 'hk_purlin');
+            addBoxToQueue(queue, -6, 46 + dyBeam, -8, 6, 78 + dyBeam, 8, woodPal.gonpo, woodAlpha, 'hk_purlin');
+
+            // 5. [추가 부재] 도리 (서까래를 받치는 가로 나무: 앞·뒤 처마도리 + 중앙 종도리)
+            addBoxToQueue(queue, -102, 26 + dyBeam, 60, 102, 36 + dyBeam, 74, woodPal.purlin, woodAlpha, 'hk_purlin');
+            addBoxToQueue(queue, -102, 26 + dyBeam, -74, 102, 36 + dyBeam, -60, woodPal.purlin, woodAlpha, 'hk_purlin');
+            // 최상단 종도리 (y = 78 ~ 88, z = 0)
+            addBoxToQueue(queue, -102, 78 + dyBeam, -7, 102, 88 + dyBeam, 7, woodPal.purlin, woodAlpha, 'hk_purlin');
+
+            // 6. 서까래 (Rafter - 종도리에서 앞/뒤 처마도리로 비스듬히 뻗은 나무들)
+            for (let rx = -95; rx <= 95; rx += 19) {
+                // 앞쪽 경사 서까래
+                addLineToQueue(queue, [rx, 86 + dyRafter, 0], [rx, 24 + dyRafter, 95], '#d97706', 4.5, 0.95, 'hk_rafter');
+                // 뒤쪽 경사 서까래
+                addLineToQueue(queue, [rx, 86 + dyRafter, 0], [rx, 24 + dyRafter, -95], '#b45309', 4.5, 0.95, 'hk_rafter');
+            }
+
+            // 7. 기와 (Roof Tile - 서까래 위를 덮는 한옥 지붕)
+            const isTileSelected = (selectedMember === 'hk_tile');
+            const isTileDimmed = (selectedMember && selectedMember !== 'hk_tile');
+            const finalTileAlpha = isTileDimmed ? 0.22 : (isTileSelected ? 0.96 : roofAlpha);
+
+            // 앞쪽 지붕면 & 뒤쪽 지붕면 (기와골 표현을 위해 5개 슬라이스로 분할)
+            for (let i = 0; i < 5; i++) {
+                const xL = -108 + i * 43.2;
+                const xR = xL + 43.2;
+                const colF = (i % 2 === 0) ? '#334155' : '#1e293b';
+                const colB = (i % 2 === 0) ? '#1e293b' : '#0f172a';
+
+                // 앞지붕 경사면
+                queue.push({
+                    type: 'poly',
+                    pts3D: [[xL, 94 + dyTile, 0], [xR, 94 + dyTile, 0], [xR, 28 + dyTile, 102], [xL, 28 + dyTile, 102]],
+                    fill: isTileSelected ? '#fde047' : colF,
+                    stroke: isTileSelected ? '#ca8a04' : '#475569',
+                    strokeW: 1.2,
+                    alpha: finalTileAlpha
+                });
+                // 뒷지붕 경사면
+                queue.push({
+                    type: 'poly',
+                    pts3D: [[xL, 94 + dyTile, 0], [xR, 94 + dyTile, 0], [xR, 28 + dyTile, -102], [xL, 28 + dyTile, -102]],
+                    fill: isTileSelected ? '#facc15' : colB,
+                    stroke: isTileSelected ? '#ca8a04' : '#475569',
+                    strokeW: 1.2,
+                    alpha: finalTileAlpha
+                });
+            }
+            // 용마루(지붕 꼭대기 중앙 기와띠)
+            addBoxToQueue(queue, -110, 92 + dyTile, -5, 110, 100 + dyTile, 5, woodPal.tile, finalTileAlpha, 'hk_tile');
+
+            // 8. 부재 이름표 등록
+            if (showLabels) {
+                labels.push({ pos: [0, 104 + dyTile, 0], text: '기와 (지붕)', bg: '#1e293b' });
+                labels.push({ pos: [-55, 62 + dyRafter, 52], text: '서까래', bg: '#b45309' });
+                labels.push({ pos: [0, 40 + dyBeam, 0], text: '보 (대들보)', bg: '#d97706' });
+                labels.push({ pos: [82, 26 + dyBeam, 72], text: '도리 · 공포(짜임)', bg: '#92400e' });
+                labels.push({ pos: [-82, -25 + dyCol, 72], text: '기둥', bg: '#78350f' });
+                labels.push({ pos: [82, -82 + dyStone, 72], text: '기초 (주춧돌)', bg: '#57534e' });
+            }
+
+            // 9. 상부 하중 전달 화살표 경로 등록 (기와 -> 서까래 -> 도리 -> 보 -> 기둥 -> 주춧돌 -> 땅)
+            if (showArrows) {
+                // 상부 지붕 하중 -> 기와 꼭대기
+                arrows.push({ from: [0, 138 + dyTile, 0], to: [0, 96 + dyTile, 0], color: '#ef4444' });
+                // 기와/서까래 경사면을 따라 앞·뒤 도리로 하중 분산
+                arrows.push({ from: [-80, 84 + dyRafter, 0], to: [-80, 34 + dyBeam, 68], color: '#f97316' });
+                arrows.push({ from: [80, 84 + dyRafter, 0], to: [80, 34 + dyBeam, 68], color: '#f97316' });
+                arrows.push({ from: [0, 84 + dyRafter, 0], to: [0, 44 + dyBeam, 0], color: '#f97316' });
+                // 대들보 중앙 -> 양쪽 기둥 위(공포)로 전달
+                arrows.push({ from: [-80, 40 + dyBeam, 0], to: [-80, 26 + dyBeam, 68], color: '#f59e0b' });
+                arrows.push({ from: [80, 40 + dyBeam, 0], to: [80, 26 + dyBeam, 68], color: '#f59e0b' });
+                // 기둥 -> 주춧돌(기초) -> 땅으로 수직 전달
+                colCoords.forEach(([cx, cz]) => {
+                    arrows.push({ from: [cx, 22 + dyCol, cz], to: [cx, -75 + dyStone, cz], color: '#ef4444' });
+                    arrows.push({ from: [cx, -80 + dyStone, cz], to: [cx, -115, cz], color: '#dc2626' });
+                });
+            }
+        }
+
+        /* =========================================================================
+           5. 캔버스 렌더링 루프 (화살표 애니메이션 & Z-Sorting)
+           ========================================================================= */
+        function renderViewport(subCenterX, subCenterY, scale, modelType, titleText) {
+            const queue = [];
+            const labels = [];
+            const arrows = [];
+
+            if (modelType === 'rc') {
+                buildRCModel(queue, labels, arrows, explodeRatio);
+            } else {
+                buildHanokModel(queue, labels, arrows, explodeRatio);
+            }
+
+            // 1) 모든 프리미티브를 2D 화면 좌표로 투영하고 평균 깊이(depth) 계산
+            const projectedItems = queue.map(item => {
+                if (item.type === 'poly') {
+                    const p2d = item.pts3D.map(pt => project3D(pt[0], pt[1], pt[2], subCenterX, subCenterY, scale));
+                    const avgDepth = p2d.reduce((acc, cur) => acc + cur.depth, 0) / p2d.length;
+                    return { ...item, p2d, depth: avgDepth };
+                } else {
+                    const a = project3D(item.p1[0], item.p1[1], item.p1[2], subCenterX, subCenterY, scale);
+                    const b = project3D(item.p2[0], item.p2[1], item.p2[2], subCenterX, subCenterY, scale);
+                    return { ...item, a, b, depth: (a.depth + b.depth) / 2 };
+                }
+            });
+
+            // 멀리 있는 것(depth가 큰 것)부터 먼저 그리기 (Painter's Algorithm)
+            projectedItems.sort((x, y) => y.depth - x.depth);
+
+            // 2) 다각형 및 선분 그리기
+            projectedItems.forEach(it => {
+                ctx.save();
+                ctx.globalAlpha = it.alpha;
+                if (it.type === 'poly') {
+                    ctx.beginPath();
+                    ctx.moveTo(it.p2d[0].sx, it.p2d[0].sy);
+                    for (let i = 1; i < it.p2d.length; i++) {
+                        ctx.lineTo(it.p2d[i].sx, it.p2d[i].sy);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = it.fill;
+                    ctx.fill();
+                    ctx.lineWidth = it.strokeW;
+                    ctx.strokeStyle = it.stroke;
+                    ctx.stroke();
+                } else if (it.type === 'line') {
+                    ctx.beginPath();
+                    if (it.dashed) ctx.setLineDash([5, 4]);
+                    ctx.moveTo(it.a.sx, it.a.sy);
+                    ctx.lineTo(it.b.sx, it.b.sy);
+                    ctx.strokeStyle = it.color;
+                    ctx.lineWidth = it.width * scale;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                }
+                ctx.restore();
+            });
+
+            // 3) 하중 전달 화살표 애니메이션 그리기 (항상 잘 보이도록 위에 오버레이)
+            const flowOffset = (animTime * 0.65) % 1;
+            arrows.forEach(ar => {
+                const pStart = project3D(ar.from[0], ar.from[1], ar.from[2], subCenterX, subCenterY, scale);
+                const pEnd = project3D(ar.to[0], ar.to[1], ar.to[2], subCenterX, subCenterY, scale);
+
+                ctx.save();
+                // 가이드 점선
+                ctx.beginPath();
+                ctx.setLineDash([4, 3]);
+                ctx.moveTo(pStart.sx, pStart.sy);
+                ctx.lineTo(pEnd.sx, pEnd.sy);
+                ctx.strokeStyle = ar.color;
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+
+                // 이동하는 화살촉(펄스) 위치 계산
+                const tipX = pStart.sx + (pEnd.sx - pStart.sx) * flowOffset;
+                const tipY = pStart.sy + (pEnd.sy - pStart.sy) * flowOffset;
+                const angle = Math.atan2(pEnd.sy - pStart.sy, pEnd.sx - pStart.sx);
+
+                ctx.translate(tipX, tipY);
+                ctx.rotate(angle);
+                ctx.beginPath();
+                ctx.moveTo(6, 0);
+                ctx.lineTo(-5, -5);
+                ctx.lineTo(-5, 5);
+                ctx.closePath();
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = ar.color;
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            // 4) 3D 부재 이름표 배지 그리기
+            labels.forEach(lb => {
+                const pt = project3D(lb.pos[0], lb.pos[1], lb.pos[2], subCenterX, subCenterY, scale);
+                ctx.save();
+                ctx.font = '900 11px "Noto Sans KR", sans-serif';
+                const textW = ctx.measureText(lb.text).width;
+                const boxW = textW + 14;
+                const boxH = 22;
+
+                ctx.fillStyle = lb.bg;
+                ctx.beginPath();
+                ctx.roundRect(pt.sx - boxW / 2, pt.sy - boxH / 2, boxW, boxH, 6);
+                ctx.fill();
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(lb.text, pt.sx, pt.sy + 0.5);
+                ctx.restore();
+            });
+
+            // 5) 각 모델 상단 제목 배지 표시
+            ctx.save();
+            ctx.font = '900 14px "Noto Sans KR", sans-serif';
+            ctx.fillStyle = '#0f172a';
+            ctx.textAlign = 'center';
+            ctx.fillText(titleText, subCenterX, 68);
+            ctx.restore();
+        }
+
+        function animate() {
+            const rect = canvas.getBoundingClientRect();
+            if (canvas.width !== rect.width || canvas.height !== rect.height) {
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            animTime += 0.03;
+
+            const W = canvas.width;
+            const H = canvas.height;
+            const centerY = H * 0.54 + explodeRatio * 35;
+
+            if (viewMode === 'both') {
+                // 중앙 구분선
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([6, 6]);
+                ctx.moveTo(W / 2, 50);
+                ctx.lineTo(W / 2, H - 20);
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+
+                const scale = Math.min(1.05, W / 820);
+                renderViewport(W * 0.25, centerY, scale, 'rc', '🏢 철근 콘크리트 구조 (일체식 구조)');
+                renderViewport(W * 0.75, centerY, scale, 'hanok', '🏯 전통 건축물 구조 (가구식 목구조)');
+            } else if (viewMode === 'rc') {
+                const scale = Math.min(1.45, W / 500);
+                renderViewport(W * 0.5, centerY, scale, 'rc', '🏢 철근 콘크리트 구조 (일체식 구조) 상세 관찰');
+            } else {
+                const scale = Math.min(1.45, W / 500);
+                renderViewport(W * 0.5, centerY, scale, 'hanok', '🏯 전통 건축물 구조 (가구식 목구조) 상세 관찰');
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
